@@ -6,7 +6,7 @@ This project provides efficient vectorized Python code to perform depth `<->` co
 
 Here's the encoding of depth values from a moving sine wave.
 
-![](etc/sindepth.mp4)
+https://github.com/user-attachments/assets/141ad884-271c-4e97-b8fa-78f0d27724ba
 
 ## Properties
 
