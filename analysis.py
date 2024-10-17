@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import huecodec as hc
 import av
 import io
+import time
 from pprint import pprint
 
 
@@ -38,9 +39,6 @@ def hue_enc_dec(gt, zrange, inv_depth):
     return d
 
 
-from io import StringIO
-
-
 def av_enc_dec(gt, zrange, inv_depth, codec):
     file = io.BytesIO()
 
@@ -50,6 +48,8 @@ def av_enc_dec(gt, zrange, inv_depth, codec):
     stream.height = gt.shape[1]
     stream.pix_fmt = codec["pix_fmt"]
     # stream.options = {"crf": "17"}
+
+    t = time.perf_counter()
 
     for d in gt:
         rgb = hc.depth2rgb(d, zrange=zrange, inv_depth=inv_depth)
@@ -61,15 +61,23 @@ def av_enc_dec(gt, zrange, inv_depth, codec):
     output.mux(packet)
     output.close()
 
+    tenc = time.perf_counter() - t
+
     file.seek(0)
     input = av.open(file, "r")
+    t = time.perf_counter()
     ds = []
     for f in input.decode(video=0):
         rgb = f.to_rgb().to_ndarray()
         d = hc.rgb2depth(rgb, zrange=zrange, inv_depth=inv_depth)
         ds.append(d)
 
-    return np.stack(ds, 0), {"nbytes": file.getbuffer().nbytes}
+    tdec = time.perf_counter() - t
+    return np.stack(ds, 0), {
+        "nbytes": file.getbuffer().nbytes,
+        "tenc": tenc,
+        "tdec": tdec,
+    }
 
 
 codecs = [
@@ -77,7 +85,12 @@ codecs = [
         "name": "libx264",
         "options": {"qp": "0"},  # use qp for 10bit pixfmt
         "pix_fmt": "yuv444p10le",
-    }
+    },
+    {
+        "name": "libx265",
+        "options": {"qp": "0"},  # use qp for 10bit pixfmt
+        "pix_fmt": "yuv444p10le",
+    },
 ]
 
 
@@ -111,6 +124,14 @@ def main():
             gt,
             av_enc_dec(gt, zrange=(0.0, 2.0), inv_depth=False, codec=codecs[0]),
             "h264-lossless-linear",
+        )
+    )
+
+    pprint(
+        analyze(
+            gt,
+            av_enc_dec(gt, zrange=(0.0, 2.0), inv_depth=False, codec=codecs[1]),
+            "h265-lossless-linear",
         )
     )
 
