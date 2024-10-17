@@ -147,15 +147,17 @@ def test_lossy_compression():
 
 
 @pytest.mark.parametrize("shape", [(480, 640), (1080, 1920)])
-def test_enc_perf(benchmark, shape):
+@pytest.mark.parametrize("use_lut", [True, False])
+def test_enc_perf(benchmark, shape, use_lut):
     d = np.random.rand(*shape)
 
-    _ = benchmark(hc.depth2rgb, d, (0.0, 1.0))
+    _ = benchmark(hc.depth2rgb, d, (0.0, 1.0), use_lut=use_lut)
 
 
 @pytest.mark.parametrize("shape", [(480, 640), (1080, 1920)])
-def test_dec_perf(benchmark, shape):
+@pytest.mark.parametrize("use_lut", [True, False])
+def test_dec_perf(benchmark, shape, use_lut):
     d = np.random.rand(*shape)
 
     e = hc.depth2rgb(d, (0.0, 1.0))
-    _ = benchmark(hc.rgb2depth, e, (0.0, 1.0))
+    _ = benchmark(hc.rgb2depth, e, (0.0, 1.0), use_lut=use_lut)
