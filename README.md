@@ -8,6 +8,10 @@ Here's the encoding of depth values from a moving sine wave.
 
 
 
+https://github.com/user-attachments/assets/2814d21a-3d1b-4857-b415-dc1c5ae31460
+
+
+
 
 ## Properties
 
