@@ -60,6 +60,31 @@ enc_perf[noLUT-(1920x1080)]  158.0871 (72.35)
 ---------------------------------------------
 ```
 
+## Analyis
+
+The script `python analysis.py` compares encoding and decoding characteristics for different standard codecs using hue depth encoding. Each test encoded/decoded `(100,512,512)` np.float32 depthmaps in range [0..2] containing a sinusoidal pattern plus random hard depth edges. The pattern moves horizontally over time.
+
+|    | variant       | zrange     |        rmse |       tenc |       tdec |   nbytes |
+|---:|:--------------|:-----------|------------:|-----------:|-----------:|---------:|
+|  0 | hue-only      | (0.0, 2.0) | 0.000332452 | 0.00630053 | 0.0499821  | nan      |
+|  1 | hue-only      | (0.0, 4.0) | 0.00066518  | 0.00578579 | 0.00461386 | nan      |
+|  2 | x264-lossless | (0.0, 2.0) | 0.000333902 | 0.014336   | 0.00734525 |  39.0091 |
+|  3 | x264-lossless | (0.0, 4.0) | 0.000670176 | 0.0136169  | 0.00729958 |  31.4305 |
+|  4 | x264-default  | (0.0, 2.0) | 0.0629023   | 0.0163551  | 0.00709273 |  29.8135 |
+|  5 | x264-default  | (0.0, 4.0) | 0.120777    | 0.0198897  | 0.00761063 |  23.3559 |
+
+The columns/units are
+ - **rmse** [m] root mean square error per depth pixel between groundtruth and transcoded depthmaps
+ - **tenc** [sec/frame] encoding time per frame
+ - **tdec** [sec/frame] decoding time per frame
+ - **nbytes** [kb/frame] kilo-bytes per encoded frame on disk.
+
+
+### Takeaways
+Here are some takeaways
+ - adjust zrange as tightly as possible to your use-case
+ - prefer loss-less codecs if affordable
+
 ## Depth transformations
 The encoding allows for linear and disparity depth normalization. In linear mode, equal depth ratios are preserved in the encoding range [0..1530], whereas in disparity mode more emphasis is put on closer depth values than on larger ones, leading to more accurare depth resolution closeup.
 
