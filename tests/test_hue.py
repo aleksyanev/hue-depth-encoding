@@ -30,32 +30,6 @@ def test_enc_dec(use_lut):
         assert hc.HUE_DEC_LUT.shape == (256, 256, 256)
 
 
-# def test_inv():
-
-#     d = np.logspace(-2, 0, 1000)
-#     rgb = hc.depth2rgb(d, (0.01, 1.1), inv_depth=True)
-#     dr = hc.rgb2depth(rgb, (0.01, 1.1), inv_depth=True)
-
-#     import matplotlib.pyplot as plt
-
-#     plt.plot(d, abs(d - dr), label="inv")
-
-#     # print(abs(d - dr))
-#     # print(abs(d - dr) / abs(d))
-
-#     rgb = hc.depth2rgb(d, (0.01, 1.1), inv_depth=False)
-#     dr = hc.rgb2depth(rgb, (0.01, 1.1), inv_depth=False)
-#     plt.plot(d, abs(d - dr), label="~inv")
-#     plt.legend()
-#     plt.show()
-#     # print(abs(d - dr))
-#     # print(abs(d - dr) / abs(d))
-
-#     # rgb = hc.depth2rgb(d, (0.0, 1.0), inv_depth=False)
-#     # dr = hc.rgb2depth(rgb, (0.0, 1.0), inv_depth=False)
-#     # print(abs(d - dr))
-
-
 @pytest.mark.parametrize("shape", [(1, 512), (512, 512), (10, 512, 512)])
 @pytest.mark.parametrize("range", [(0.1, 1.0), (0.1, 2.0)])
 @pytest.mark.parametrize("inv_depth", [True, False])

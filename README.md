@@ -24,6 +24,8 @@ This implementation is vectorized using numpy and can handle any image shapes `(
 
 ## Usage
 
+There is currently no PyPi package to install, however the code is contained in a single file for easy of distribution :)
+
 ```python
 # Import
 import huecodec as hc
@@ -32,11 +34,11 @@ import huecodec as hc
 d = rng.random((5,240,320), dtype=np.float32)*0.9 + 0.1
 
 # Encode
-rgb = hc.depth2rgb(d, range=(0.1,1.0), inv_depth=False)
+rgb = hc.depth2rgb(d, zrange=(0.1,1.0), inv_depth=False)
 # (5,240,320,3), uint8
 
 # Decode
-depth = hc.rgb2depth(rgb, range=(0.1,1.0), inv_depth=False)
+depth = hc.rgb2depth(rgb, zrange=(0.1,1.0), inv_depth=False)
 # (5,240,320), float32
 ```
 
