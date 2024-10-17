@@ -7,10 +7,7 @@ This project provides efficient vectorized Python code to perform depth `<->` co
 Here's the encoding of depth values from a moving sine wave.
 
 
-
 https://github.com/user-attachments/assets/2814d21a-3d1b-4857-b415-dc1c5ae31460
-
-
 
 
 ## Properties
@@ -25,6 +22,23 @@ The compression first transforms raw depth values to the applicable encoding ran
 
 This implementation is vectorized using numpy and can handle any image shapes `(*,H,W) <-> (*,H,W,3)`. For improved performance, we precompute encoder and decoder lookup tables to reduce encoding/decoding to a simple lookup. The lookup tables require ~32MB of memory. Use `use_lut=False` switch to rely on the pure vectorized implementation. See benchmarks below for effects.
 
+## Usage
+
+```python
+# Import
+import huecodec as hc
+
+# Random float depths
+d = rng.random((5,240,320), dtype=np.float32)*0.9 + 0.1
+
+# Encode
+rgb = hc.depth2rgb(d, range=(0.1,1.0), inv_depth=False)
+# (5,240,320,3), uint8
+
+# Decode
+depth = hc.rgb2depth(rgb, range=(0.1,1.0), inv_depth=False)
+# (5,240,320), float32
+```
 
 ## Benchmark
 
