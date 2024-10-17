@@ -6,7 +6,6 @@ reduces the data to approximately 10.5 bits while preserving the key
 advantage of allowing further compression using standard lossy codecs with 
 minimal compression artifacts.
 
-
 Christoph Heindl, 2024/10, 
 https://github.com/cheind/hue-depth-encoding
 

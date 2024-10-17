@@ -6,7 +6,6 @@ This project provides efficient vectorized Python code to perform depth `<->` co
 
 Here's the encoding of depth values from a moving sine wave.
 
-
 https://github.com/user-attachments/assets/2814d21a-3d1b-4857-b415-dc1c5ae31460
 
 
@@ -65,3 +64,10 @@ enc_perf[noLUT-(1920x1080)]  158.0871 (72.35)
 The encoding allows for linear and disparity depth normalization. In linear mode, equal depth ratios are preserved in the encoding range [0..1530], whereas in disparity mode more emphasis is put on closer depth values than on larger ones, leading to more accurare depth resolution closeup.
 
 ![](etc/compare_encoding.svg)
+
+## Notes
+
+The original paper referenced is potentially inaccurate in its equations. This has been noted in varios posts [#10415](https://github.com/IntelRealSense/librealsense/issues/10145),[#11187](https://github.com/IntelRealSense/librealsense/issues/11187),[#10302](https://github.com/IntelRealSense/librealsense/issues/10302).
+
+This implementation is based on the original paper and code from
+https://github.com/jdtremaine/hue-codec/.
