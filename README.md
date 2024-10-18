@@ -31,10 +31,9 @@ With Python >= 3.11 execute
 
 ```shell
 git clone https://github.com/cheind/hue-depth-encoding.git
-
-# default install requires only numpy
 pip install -e .
-# development install adds more packages to run tests/analysis
+
+# or development install adds more packages to run tests/analysis
 pip install -e '.[dev]'
 # or with gpu codec support in dev mode
 pip install -e '.[dev]' --no-binary=av 
