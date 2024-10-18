@@ -160,9 +160,17 @@ https://github.com/FFmpeg/FFmpeg/blob/master/libavutil/pixfmt.h
 
 
 ### Takeaways
-Here are some takeaways
- - adjust zrange as tightly as possible to your use-case
+Here are some take aways to consider
+ - adjust zrange as tightly as possible to your use-case. This increases filesize but reduces reconstruction loss.
  - prefer loss-less codecs if affordable
+ - when using lossy codecs ensure that your application does not rely on depth-edges.
+
+The following plot shows a lossy h264 encoding on real data. Most of the errors are sub-mm, only few > 1cm. 
+
+![](etc/h264-tuned-gpu.2.hist.png)
+
+Turns out these errors are located on depth edges where the lossy codec starts interpolating values.
+ 
 
 ## Notes
 
