@@ -1,13 +1,52 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
-import av
 import io
 import time
-from pprint import pprint
-from itertools import product
+import traceback
+from itertools import cycle, islice, product
+
+import av
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from omegaconf import OmegaConf
 
 import huecodec as hc
+
+N_ENCDEC_FRAMES = 1000
+
+MATRIX = {
+    "zrange": [(0.0, 2.0), (0.0, 4.0)],
+    "linear": [True],
+    "codec": [
+        {
+            "variant": "hue-only",
+            "name": "none",
+        },
+        {
+            "variant": "h264-lossless-cpu",
+            "name": "libx264",
+            "options": {"qp": "0"},  # use qp instead of crf for 10bit pixfmt
+            "pix_fmt": "yuv444p10le",  # use 10bit to avoid lossy conversion from rgb
+        },
+        {
+            "variant": "h264-default-cpu",
+            "name": "libx264",
+            "options": None,
+            "pix_fmt": "yuv420p",
+        },
+        {
+            "variant": "h264-lossless-gpu",
+            "name": "h264_nvenc",
+            "options": {"preset": "lossless"},
+            "pix_fmt": "gbrp",  # planar gbr, only way i could make this lossless
+        },
+        {
+            "variant": "h264-default-gpu",
+            "name": "h264_nvenc",
+            "options": None,
+            "pix_fmt": "yuv420p",
+        },
+    ],
+}
 
 
 def generate_synthetic_depth_images(n: int, speed: int = 10):
@@ -38,14 +77,24 @@ def generate_synthetic_depth_images(n: int, speed: int = 10):
 
 def hue_enc_dec(gt, zrange, inv_depth, **kwargs):
     t = time.perf_counter()
-    e = hc.depth2rgb(gt, zrange=zrange, inv_depth=inv_depth)
+
+    # process N_ENCDEC_FRAMES by cycling batched gt
+    for depth in islice(cycle(gt), N_ENCDEC_FRAMES):
+        e = hc.depth2rgb(depth, zrange=zrange, inv_depth=inv_depth)
     tenc = time.perf_counter() - t  # not very accurate, use benchmarks
+
     t = time.perf_counter()
-    d = hc.rgb2depth(e, zrange=zrange, inv_depth=inv_depth)
+    for rgb in islice(cycle([e]), N_ENCDEC_FRAMES):
+        d = hc.rgb2depth(rgb, zrange=zrange, inv_depth=inv_depth)
     tdec = time.perf_counter() - t
+
+    e = hc.depth2rgb(gt, zrange=zrange, inv_depth=inv_depth)
+    d = hc.rgb2depth(e, zrange=zrange, inv_depth=inv_depth)
+
+    factor = gt.shape[0] / N_ENCDEC_FRAMES
     return d, {
-        "tenc": tenc,
-        "tdec": tdec,
+        "tenc": tenc * factor,
+        "tdec": tdec * factor,
         "nbytes": e.nbytes,
     }
 
@@ -59,9 +108,10 @@ def av_enc_dec(gt, zrange, inv_depth, codec):
     stream.height = gt.shape[1]
     stream.pix_fmt = codec["pix_fmt"]
 
+    # to reduce impact of overhead of the codec,
+    # we virtually repeat the experiment
     t = time.perf_counter()
-
-    for d in gt:
+    for d in islice(cycle(gt), N_ENCDEC_FRAMES):
         rgb = hc.depth2rgb(d, zrange=zrange, inv_depth=inv_depth)
         frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
         packet = stream.encode(frame)
@@ -77,31 +127,19 @@ def av_enc_dec(gt, zrange, inv_depth, codec):
     input = av.open(file, "r")
     t = time.perf_counter()
     ds = []
-    for f in input.decode(video=0):
+    for fidx, f in enumerate(input.decode(video=0)):
         rgb = f.to_rgb().to_ndarray()
         d = hc.rgb2depth(rgb, zrange=zrange, inv_depth=inv_depth)
-        ds.append(d)
+        if fidx < gt.shape[0]:
+            ds.append(d)
 
     tdec = time.perf_counter() - t
+    factor = gt.shape[0] / N_ENCDEC_FRAMES
     return np.stack(ds, 0), {
-        "nbytes": file.getbuffer().nbytes,
-        "tenc": tenc,
-        "tdec": tdec,
+        "nbytes": file.getbuffer().nbytes * factor,
+        "tenc": tenc * factor,
+        "tdec": tdec * factor,
     }
-
-
-# codecs = [
-#     {
-#         "name": "libx264",
-#         "options": {"qp": "0"},  # use qp for 10bit pixfmt
-#         "pix_fmt": "yuv444p10le",
-#     },
-#     {
-#         "name": "libx265",
-#         "options": {"qp": "0"},  # use qp for 10bit pixfmt
-#         "pix_fmt": "yuv444p10le",
-#     },
-# ]
 
 
 def analyze(gt, pred):
@@ -121,54 +159,36 @@ def analyze(gt, pred):
     }
 
 
-matrix = {
-    "zrange": [(0.0, 2.0), (0.0, 4.0)],
-    "linear": [True],
-    "codec": [
-        {
-            "name": "none",
-            "variant": "hue-only",
-        },
-        {
-            "name": "libx264",
-            "variant": "x264-lossless",
-            "options": {"qp": "0"},  # use qp instead of crf for 10bit pixfmt
-            "pix_fmt": "yuv444p10le",  # use 10bit to avoid lossy conversion from rgb
-        },
-        {
-            "name": "libx264",
-            "variant": "x264-default",
-            "options": None,
-            "pix_fmt": "yuv444p10le",  # use 10bit to avoid lossy conversion from rgb
-        },
-    ],
-}
-
-
-def run(gt, zrange, linear, codec):
+def run(cfg: OmegaConf, gt, zrange, linear, codec):
     method = hue_enc_dec if codec["variant"] == "hue-only" else av_enc_dec
-    title = f'{codec["variant"]=}/{linear=}/{zrange=}'
 
     try:
         pred = method(gt, zrange=zrange, inv_depth=not linear, codec=codec)
         report = analyze(gt, pred)
-    except Exception as e:
-        print(e)
+    except Exception:
+        traceback.print_exc()
         report = {}
-
-    report["title"] = title
-    report["variant"] = codec["variant"]
-    report["zrange"] = zrange
-    # report['linear'] = codec["linear"]
-
     return report
 
 
-def execute_variants(gt):
-    gen = product(matrix["codec"], matrix["zrange"], matrix["linear"])
+def execute_variants(cfg: OmegaConf, gt):
+    var_filter = cfg.get("variant", None)
+    if isinstance(var_filter, str):
+        var_filter = [var_filter]
+
+    gen = product(MATRIX["codec"], MATRIX["zrange"], MATRIX["linear"])
     reports = []
     for codec, zrange, linear in gen:
-        reports.append(run(gt, zrange, linear, codec))
+        title = f'{codec["variant"]=}/{linear=}/{zrange=}'
+        if var_filter is None or codec["variant"] in var_filter:
+            print(f"running {title}")
+            report = run(cfg, gt, zrange, linear, codec)
+            report["variant"] = codec["variant"]
+            report["zrange"] = zrange
+            report["title"] = title
+            reports.append(report)
+        else:
+            print(f"skipping {title}")
     return reports
 
 
@@ -187,14 +207,15 @@ def plot_depth(d, zrange, name):
 
 
 def main():
-    gt = np.stack(list(generate_synthetic_depth_images(30)), 0)
+    cfg = OmegaConf.from_cli()
+    gt = np.stack(list(generate_synthetic_depth_images(100)), 0)
     plot_depth(gt[0], (0.0, 2.0), "synthetic")
 
     # warmup
     hue_enc_dec(gt, (0.0, 2.0), False)
 
     # run variants
-    reports = execute_variants(gt)
+    reports = execute_variants(cfg, gt)
 
     # Format
     df = pd.DataFrame(reports)
