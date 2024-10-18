@@ -45,12 +45,14 @@ depth = hc.rgb2depth(rgb, zrange=(0.1,1.0), inv_depth=False)
 
 ### Encoding/Decoding Roundtrips
 
-The script `python analysis.py` compares encoding and decoding characteristics for different standard codecs using hue depth encoding. The reported figures have the following meaning:
+The script `python analysis.py` compares encoding and decoding characteristics for different standard video codecs using hue depth encoding. The reported figures have the following meaning:
 
  - **rmse** [m] root mean square error per depth pixel between groundtruth and transcoded depthmaps
  - **tenc** [milli-sec/frame] encoding time per frame
  - **tdec** [milli-sec/frame] decoding time per frame
  - **nbytes** [kb/frame] kilo-bytes per encoded frame on disk.
+
+All tests are carried out on a 12th Gen Intel® Core™ i9-12900K × 24 with NVIDIA GeForce RTX™ 3090 Ti.
 
 #### Synthetic Depthmaps
 
