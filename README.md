@@ -43,22 +43,31 @@ depth = hc.rgb2depth(rgb, zrange=(0.1,1.0), inv_depth=False)
 
 ## Evaluation
 
-The script `python analysis.py` compares encoding and decoding characteristics for different standard codecs using hue depth encoding. Each test encoded/decoded `(100,512,512)` np.float32 depthmaps in range [0..2] containing a sinusoidal pattern plus random hard depth edges. The pattern moves horizontally over time.
+### Encoding/Decoding Roundtrips
 
-|    | variant       | zrange     |        rmse |       tenc |       tdec |   nbytes |
-|---:|:--------------|:-----------|------------:|-----------:|-----------:|---------:|
-|  0 | hue-only      | (0.0, 2.0) | 0.000332452 | 0.00630053 | 0.0499821  | nan      |
-|  1 | hue-only      | (0.0, 4.0) | 0.00066518  | 0.00578579 | 0.00461386 | nan      |
-|  2 | x264-lossless | (0.0, 2.0) | 0.000333902 | 0.014336   | 0.00734525 |  39.0091 |
-|  3 | x264-lossless | (0.0, 4.0) | 0.000670176 | 0.0136169  | 0.00729958 |  31.4305 |
-|  4 | x264-default  | (0.0, 2.0) | 0.0629023   | 0.0163551  | 0.00709273 |  29.8135 |
-|  5 | x264-default  | (0.0, 4.0) | 0.120777    | 0.0198897  | 0.00761063 |  23.3559 |
+The script `python analysis.py` compares encoding and decoding characteristics for different standard codecs using hue depth encoding. The reported figures have the following meaning:
 
-The columns/units are
  - **rmse** [m] root mean square error per depth pixel between groundtruth and transcoded depthmaps
- - **tenc** [sec/frame] encoding time per frame
- - **tdec** [sec/frame] decoding time per frame
+ - **tenc** [milli-sec/frame] encoding time per frame
+ - **tdec** [milli-sec/frame] decoding time per frame
  - **nbytes** [kb/frame] kilo-bytes per encoded frame on disk.
+
+#### Synthetic Depthmaps
+
+Each test encodes/decodes a sequence `(100,512,512)` of np.float32 depthmaps in range `[0..2]` containing a sinusoidal pattern plus random hard depth edges. The pattern moves horizontally over time.
+
+![](etc/synthetic.png)
+
+The reported values are
+
+| variant       | zrange [m]   |   rmse [m] |   tenc [ms/img] |   tdec [ms/img] |   size [kb/img] |
+|:--------------|:-------------|-----------:|----------------:|----------------:|----------------:|
+| hue-only      | (0.0, 2.0)   |    0.00033 |            3.09 |            1.72 |          768.00 |
+| hue-only      | (0.0, 4.0)   |    0.00067 |            3.15 |            1.75 |          768.00 |
+| x264-lossless | (0.0, 2.0)   |    0.00033 |            7.93 |            3.12 |           39.52 |
+| x264-lossless | (0.0, 4.0)   |    0.00067 |            5.96 |            3.00 |           32.07 |
+| x264-default  | (0.0, 2.0)   |    0.06289 |            6.29 |            2.86 |           29.84 |
+| x264-default  | (0.0, 4.0)   |    0.11913 |            6.34 |            2.82 |           23.58 |
 
 ### Hue Benchmark
 
