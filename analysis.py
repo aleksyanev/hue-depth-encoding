@@ -10,7 +10,7 @@ from itertools import product
 import huecodec as hc
 
 
-def generate_depth_images(n: int, speed: int = 10):
+def generate_synthetic_depth_images(n: int, speed: int = 10):
     t = np.linspace(0, 1, 512)
     d_col = np.cos(2 * np.pi / 0.25 * t)
     d_row = np.cos(2 * np.pi / 0.25 * t)
@@ -46,6 +46,7 @@ def hue_enc_dec(gt, zrange, inv_depth, **kwargs):
     return d, {
         "tenc": tenc,
         "tdec": tdec,
+        "nbytes": e.nbytes,
     }
 
 
@@ -171,10 +172,31 @@ def execute_variants(gt):
     return reports
 
 
+def plot_depth(d, zrange, name):
+    fig = plt.figure(figsize=plt.figaspect(1 / 2.3), layout="constrained")
+    gs = fig.add_gridspec(1, 3, width_ratios=[0.05, 1, 1], wspace=0.1)
+    ax = fig.add_subplot(gs[1])
+    im = ax.imshow(d)
+    ax = fig.add_subplot(gs[0])
+    plt.colorbar(im, cax=ax)
+    ax.yaxis.set_ticks_position("left")
+    ax = fig.add_subplot(gs[2])
+    im = ax.imshow(hc.depth2rgb(d, zrange=zrange))
+    fig.savefig(f"tmp/{name}.png", dpi=300)
+    plt.close(fig)
+
+
 def main():
-    gt = np.stack(list(generate_depth_images(30)), 0)
+    gt = np.stack(list(generate_synthetic_depth_images(30)), 0)
+    plot_depth(gt[0], (0.0, 2.0), "synthetic")
+
+    # warmup
+    hue_enc_dec(gt, (0.0, 2.0), False)
+
+    # run variants
     reports = execute_variants(gt)
 
+    # Format
     df = pd.DataFrame(reports)
     del df["title"]
     del df["mse"]
@@ -182,33 +204,23 @@ def main():
     del df["abs_err_mean"]
     df = df.reindex(columns=["variant", "zrange", "rmse", "tenc", "tdec", "nbytes"])
 
-    df["tenc"] /= len(gt)
-    df["tdec"] /= len(gt)
-    df["nbytes"] /= len(gt) * 1e3
+    df["tenc"] /= len(gt) / 1e3  # msec/frame
+    df["tdec"] /= len(gt) / 1e3  # msec/frame
+    df["nbytes"] /= len(gt) * 1024  # kb/frame
+
+    df = df.rename(
+        columns={
+            "zrange": "zrange [m]",
+            "rmse": "rmse [m]",
+            "tenc": "tenc [ms/img]",
+            "tdec": "tdec [ms/img]",
+            "nbytes": "size [kb/img]",
+        }
+    )
 
     print(df)
     print()
-    print(df.to_markdown())
-
-    # pprint(
-    #     analyze(gt, hue_enc_dec(gt, zrange=(0.0, 2.0), inv_depth=False), "hue-linear")
-    # )
-
-    # pprint(
-    #     analyze(
-    #         gt,
-    #         av_enc_dec(gt, zrange=(0.0, 2.0), inv_depth=False, codec=codecs[0]),
-    #         "h264-lossless-linear",
-    #     )
-    # )
-
-    # pprint(
-    #     analyze(
-    #         gt,
-    #         av_enc_dec(gt, zrange=(0.0, 2.0), inv_depth=False, codec=codecs[1]),
-    #         "h265-lossless-linear",
-    #     )
-    # )
+    print(df.to_markdown(index=False, floatfmt=("", "", ".5f", ".2f", ".2f", ".2f")))
 
 
 if __name__ == "__main__":
