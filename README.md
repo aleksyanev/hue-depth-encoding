@@ -8,21 +8,6 @@ Here's the encoding of depth values from a moving sine wave.
 
 https://github.com/user-attachments/assets/2814d21a-3d1b-4857-b415-dc1c5ae31460
 
-## Installation
-
-With Python >= 3.11 execute
-
-```shell
-git clone https://github.com/cheind/hue-depth-encoding.git
-
-# default install requires only numpy
-pip install -e .
-# development install adds more packages to run tests/analysis
-pip install -e '.[dev]'
-# or with gpu codec support in dev mode
-pip install -e '.[dev]' --no-binary=av 
-```
-
 ## Properties
 
 The encoding is designed to transform 16bit single channel images to RGB color images that can be processed by standard (lossy) image codec with minimal compression artefacts. This leads to a compression factor of up to 80x.
@@ -41,9 +26,22 @@ The encoding allows for linear and disparity depth normalization. In linear mode
 
 This implementation is vectorized using numpy and can handle any image shapes `(*,H,W) <-> (*,H,W,3)`. For improved performance, we precompute encoder and decoder lookup tables to reduce encoding/decoding to a simple lookup. The lookup tables require ~32MB of memory. Use `use_lut=False` switch to rely on the pure vectorized implementation. See benchmarks below for effects.
 
+## Installation
+With Python >= 3.11 execute
+
+```shell
+git clone https://github.com/cheind/hue-depth-encoding.git
+
+# default install requires only numpy
+pip install -e .
+# development install adds more packages to run tests/analysis
+pip install -e '.[dev]'
+# or with gpu codec support in dev mode
+pip install -e '.[dev]' --no-binary=av 
+```
+
 ## Usage
 
-There is currently no PyPi package to install, however the code is contained in a single file for easy of distribution :)
 
 ```python
 # Import
