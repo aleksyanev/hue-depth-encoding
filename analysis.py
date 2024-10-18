@@ -12,6 +12,7 @@ from omegaconf import OmegaConf
 import huecodec as hc
 
 N_ENCDEC_FRAMES = 1000
+SHOW_PLOTS = False
 
 MATRIX = {
     "zrange": [(0.0, 2.0), (0.0, 4.0)],
@@ -36,7 +37,19 @@ MATRIX = {
         {
             "variant": "h264-lossless-gpu",
             "name": "h264_nvenc",
-            "options": {"preset": "lossless"},
+            "options": {"tune": "lossless"},
+            "pix_fmt": "gbrp",  # planar gbr, only way i could make this lossless
+        },
+        {
+            "variant": "h264-tuned-gpu",
+            "name": "h264_nvenc",
+            "options": {"preset": "p7", "rc": "vbr", "pq": "10", "profile": "high"},
+            "pix_fmt": "gbrp",  # planar gbr, only way i could make this lossless
+        },
+        {
+            "variant": "h265-lossless-gpu",
+            "name": "hevc_nvenc",
+            "options": {"tune": "lossless"},
             "pix_fmt": "gbrp",  # planar gbr, only way i could make this lossless
         },
         {
@@ -142,29 +155,53 @@ def av_enc_dec(gt, zrange, inv_depth, codec):
     }
 
 
-def analyze(gt, pred):
+def analyze(gt, pred, outprefix):
     extra = {}
     if isinstance(pred, tuple):
         pred, extra = pred
 
     err = abs(gt - pred)
+
+    fig, ax = plt.subplots()
+    bins = np.logspace(-5, -2, 20)
+    bins = np.concatenate((bins, [0.011]))
+    xticks = bins[[0, 2, 5, 10, -1]]
+    xlabels = [f"{b:.4f}" for b in xticks]
+    xlabels[-1] = "0.01+"
+
+    ax.hist(
+        np.clip(err, bins[0], bins[-1] - 1e-12).reshape(-1), bins=bins, density=False
+    )
+    ax.xaxis.grid(True)
+    ax.set_xlabel("abs error [m]")
+    ax.set_ylabel("count")
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xlabels)
+    ax.set_xscale("log")
+    fig.savefig(f"{outprefix}.hist.png", dpi=300)
+    if SHOW_PLOTS:
+        plt.show()
+
     mse = np.square(gt - pred).mean()
     rmse = np.sqrt(mse)
     return {
         "abs_err_mean": err.mean().item(),
         "abs_err_std": err.std().item(),
+        "abs_err_1mm": (err < 1e-3).sum() / np.prod(err.shape),
+        "abs_err_5mm": (err < 5e-3).sum() / np.prod(err.shape),
+        "abs_err_1cm": (err < 1e-2).sum() / np.prod(err.shape),
         "mse": mse.item(),
         "rmse": rmse.item(),
         **extra,
     }
 
 
-def run(cfg: OmegaConf, gt, zrange, linear, codec):
+def run(cfg: OmegaConf, gt, zrange, linear, codec, outprefix):
     method = hue_enc_dec if codec["variant"] == "hue-only" else av_enc_dec
 
     try:
         pred = method(gt, zrange=zrange, inv_depth=not linear, codec=codec)
-        report = analyze(gt, pred)
+        report = analyze(gt, pred, outprefix=outprefix)
     except Exception:
         traceback.print_exc()
         report = {}
@@ -180,9 +217,10 @@ def execute_variants(cfg: OmegaConf, gt):
     reports = []
     for codec, zrange, linear in gen:
         title = f'{codec["variant"]=}/{linear=}/{zrange=}'
+        prefix = f'tmp/{codec["variant"]}.{int(zrange[1]-zrange[0])}'
         if var_filter is None or codec["variant"] in var_filter:
             print(f"running {title}")
-            report = run(cfg, gt, zrange, linear, codec)
+            report = run(cfg, gt, zrange, linear, codec, prefix)
             report["variant"] = codec["variant"]
             report["zrange"] = zrange
             report["title"] = title
@@ -207,9 +245,23 @@ def plot_depth(d, zrange, name):
 
 
 def main():
-    cfg = OmegaConf.from_cli()
-    gt = np.stack(list(generate_synthetic_depth_images(100)), 0)
-    plot_depth(gt[0], (0.0, 2.0), "synthetic")
+    global N_ENCDEC_FRAMES, SHOW_PLOTS
+    cfg = OmegaConf.merge(
+        OmegaConf.create({"nframes": 1000, "show": False}),
+        OmegaConf.from_cli(),
+    )
+    N_ENCDEC_FRAMES = cfg.nframes
+    SHOW_PLOTS = cfg.show
+
+    datapath = cfg.get("data", None)
+    if datapath is None:
+        print("Generating synthetic dataset")
+        gt = np.stack(list(generate_synthetic_depth_images(100)), 0)
+        plot_depth(gt[0], (0.0, 2.0), "synthetic")
+    else:
+        print("Loading dataset")
+        gt = np.load(datapath).astype(np.float32)
+        plot_depth(gt[0], (0.0, 2.0), "real")
 
     # warmup
     hue_enc_dec(gt, (0.0, 2.0), False)
@@ -223,7 +275,19 @@ def main():
     del df["mse"]
     del df["abs_err_std"]
     del df["abs_err_mean"]
-    df = df.reindex(columns=["variant", "zrange", "rmse", "tenc", "tdec", "nbytes"])
+    df = df.reindex(
+        columns=[
+            "variant",
+            "zrange",
+            "rmse",
+            "abs_err_1mm",
+            "abs_err_5mm",
+            "abs_err_1cm",
+            "tenc",
+            "tdec",
+            "nbytes",
+        ]
+    )
 
     df["tenc"] /= len(gt) / 1e3  # msec/frame
     df["tdec"] /= len(gt) / 1e3  # msec/frame
@@ -233,6 +297,9 @@ def main():
         columns={
             "zrange": "zrange [m]",
             "rmse": "rmse [m]",
+            "abs_err_1mm": "<1mm [%]",
+            "abs_err_5mm": "<5mm [%]",
+            "abs_err_1cm": "<1cm [%]",
             "tenc": "tenc [ms/img]",
             "tdec": "tdec [ms/img]",
             "nbytes": "size [kb/img]",
@@ -241,7 +308,12 @@ def main():
 
     print(df)
     print()
-    print(df.to_markdown(index=False, floatfmt=("", "", ".5f", ".2f", ".2f", ".2f")))
+    print(
+        df.to_markdown(
+            index=False,
+            floatfmt=("", "", ".5f", ".2f", ".2f", ".2f", ".2f", ".2f", ".2f"),
+        )
+    )
 
 
 if __name__ == "__main__":
