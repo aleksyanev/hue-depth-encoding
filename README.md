@@ -17,6 +17,12 @@ The encoding is designed to transform 16bit single channel images to RGB color i
 
 The compression first transforms raw depth values to the applicable encoding range [0..1530] (~10.5bit) via a normalization strategy (linear/disparity) using a user provided near/far value. Next, for each encoding value the corresponding color is computed. The color is chosen carefully to respect the aforementioned properties. Upon decoding the reverse process is computed.
 
+### Depth transformations
+The encoding allows for linear and disparity depth normalization. In linear mode, equal depth ratios are preserved in the encoding range [0..1530], whereas in disparity mode more emphasis is put on closer depth values than on larger ones, leading to more accurare depth resolution closeup.
+
+![](etc/compare_encoding.svg)
+
+
 ## Implementation
 
 This implementation is vectorized using numpy and can handle any image shapes `(*,H,W) <-> (*,H,W,3)`. For improved performance, we precompute encoder and decoder lookup tables to reduce encoding/decoding to a simple lookup. The lookup tables require ~32MB of memory. Use `use_lut=False` switch to rely on the pure vectorized implementation. See benchmarks below for effects.
@@ -54,6 +60,11 @@ The script `python analysis.py` compares encoding and decoding characteristics f
 
 All tests are carried out on a 12th Gen Intel® Core™ i9-12900K × 24 with NVIDIA GeForce RTX™ 3090 Ti.
 
+```shell
+# run analysis only for specific variants
+python analysis.py variant=[hue-only,h264-lossless-gpu]
+```
+
 #### Synthetic Depthmaps
 
 Each test encodes/decodes a sequence `(100,512,512)` of np.float32 depthmaps in range `[0..2]` containing a sinusoidal pattern plus random hard depth edges. The pattern moves horizontally over time.
@@ -62,16 +73,20 @@ Each test encodes/decodes a sequence `(100,512,512)` of np.float32 depthmaps in 
 
 The reported values are
 
-| variant       | zrange [m]   |   rmse [m] |   tenc [ms/img] |   tdec [ms/img] |   size [kb/img] |
-|:--------------|:-------------|-----------:|----------------:|----------------:|----------------:|
-| hue-only      | (0.0, 2.0)   |    0.00033 |            3.09 |            1.72 |          768.00 |
-| hue-only      | (0.0, 4.0)   |    0.00067 |            3.15 |            1.75 |          768.00 |
-| x264-lossless | (0.0, 2.0)   |    0.00033 |            7.93 |            3.12 |           39.52 |
-| x264-lossless | (0.0, 4.0)   |    0.00067 |            5.96 |            3.00 |           32.07 |
-| x264-default  | (0.0, 2.0)   |    0.06289 |            6.29 |            2.86 |           29.84 |
-| x264-default  | (0.0, 4.0)   |    0.11913 |            6.34 |            2.82 |           23.58 |
+| variant           | zrange [m]   |   rmse [m] |   tenc [ms/img] |   tdec [ms/img] |   size [kb/img] |
+|:------------------|:-------------|-----------:|----------------:|----------------:|----------------:|
+| hue-only          | (0.0, 2.0)   |    0.00033 |            1.92 |            1.35 |          768.00 |
+| hue-only          | (0.0, 4.0)   |    0.00067 |            1.95 |            1.38 |          768.00 |
+| h264-lossless-cpu | (0.0, 2.0)   |    0.00033 |            6.46 |            3.08 |           31.97 |
+| h264-lossless-cpu | (0.0, 4.0)   |    0.00067 |            5.29 |            2.93 |           26.30 |
+| h264-default-cpu  | (0.0, 2.0)   |    0.09704 |            5.56 |            2.01 |           11.81 |
+| h264-default-cpu  | (0.0, 4.0)   |    0.12807 |            5.27 |            1.89 |            9.51 |
+| h264-lossless-gpu | (0.0, 2.0)   |    0.00033 |            2.83 |            2.25 |           70.97 |
+| h264-lossless-gpu | (0.0, 4.0)   |    0.00067 |            2.60 |            2.06 |           30.75 |
+| h264-default-gpu  | (0.0, 2.0)   |    0.09996 |            2.56 |            2.73 |           18.38 |
+| h264-default-gpu  | (0.0, 4.0)   |    0.12741 |            2.84 |            2.43 |           13.42 |
 
-### Hue Benchmark
+### Hue Runtime Benchmark
 
 Here are benchmark results for encoding/decoding float32 depthmaps of various sizes with differnt characteristics. Note, this is pure depth -> color -> depth transcoding without any video codecs involved.
 
@@ -90,10 +105,26 @@ enc_perf[noLUT-(1920x1080)]  158.0871 (72.35)
 ---------------------------------------------
 ```
 
-### Depth transformations
-The encoding allows for linear and disparity depth normalization. In linear mode, equal depth ratios are preserved in the encoding range [0..1530], whereas in disparity mode more emphasis is put on closer depth values than on larger ones, leading to more accurare depth resolution closeup.
+```shell
+# run tests and benchmarks
+pytest
+```
 
-![](etc/compare_encoding.svg)
+### Note on Video Codecs
+
+When tuning the prameters for a video codec you need to take into account lossy compression that happens on  different levels of encoding:
+ - **spatial/temporal** quantization based how images change over time. Usually controlled by the codec `preset/profile` (lossless, low-latency,...) and quality parameters such as `crf`, `qp`.
+ - **color space** quantization due to converting RGB to target pixel format. Different codecs support different pixel color formats of which most perform a lossy compression from rgb to target space. 
+
+Print encoder supported options and pixel formats
+```shell
+# print encoder options
+ffmpeg -h encoder=h264_nvenc
+```
+
+See packing and compression of color formats
+https://github.com/FFmpeg/FFmpeg/blob/master/libavutil/pixfmt.h
+
 
 ### Takeaways
 Here are some takeaways
