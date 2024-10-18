@@ -54,6 +54,7 @@ depth = hc.rgb2depth(rgb, zrange=(0.1,1.0), inv_depth=False)
 The script `python analysis.py` compares encoding and decoding characteristics for different standard video codecs using hue depth encoding. The reported figures have the following meaning:
 
  - **rmse** [m] root mean square error per depth pixel between groundtruth and transcoded depthmaps
+ - **<x** [%] percent of absolute errors less than x
  - **tenc** [milli-sec/frame] encoding time per frame
  - **tdec** [milli-sec/frame] decoding time per frame
  - **nbytes** [kb/frame] kilo-bytes per encoded frame on disk.
@@ -72,19 +73,51 @@ Each test encodes/decodes a sequence `(100,512,512)` of np.float32 depthmaps in 
 ![](etc/synthetic.png)
 
 The reported values are
+| variant           | zrange [m]   |   rmse [m] |   <1mm [%] |   <5mm [%] |   <1cm [%] |   tenc [ms/img] |   tdec [ms/img] |   size [kb/img] |
+|:------------------|:-------------|-----------:|-----------:|-----------:|-----------:|----------------:|----------------:|----------------:|
+| hue-only          | (0.0, 2.0)   |    0.00033 |       1.00 |       1.00 |       1.00 |            1.90 |            1.29 |          768.00 |
+| hue-only          | (0.0, 4.0)   |    0.00067 |       0.82 |       1.00 |       1.00 |            1.90 |            1.23 |          768.00 |
+| h264-lossless-cpu | (0.0, 2.0)   |    0.00033 |       1.00 |       1.00 |       1.00 |            5.87 |            2.92 |           31.97 |
+| h264-lossless-cpu | (0.0, 4.0)   |    0.00067 |       0.82 |       1.00 |       1.00 |            6.67 |            2.76 |           26.30 |
+| h264-default-cpu  | (0.0, 2.0)   |    0.09704 |       0.29 |       0.54 |       0.73 |            4.88 |            1.87 |           11.81 |
+| h264-default-cpu  | (0.0, 4.0)   |    0.12807 |       0.28 |       0.53 |       0.72 |            6.02 |            1.85 |            9.51 |
+| h264-lossless-gpu | (0.0, 2.0)   |    0.00033 |       1.00 |       1.00 |       1.00 |            2.60 |            2.08 |           70.97 |
+| h264-lossless-gpu | (0.0, 4.0)   |    0.00067 |       0.82 |       1.00 |       1.00 |            2.60 |            1.84 |           30.75 |
+| h264-tuned-gpu    | (0.0, 2.0)   |    0.16941 |       0.84 |       0.99 |       0.99 |            2.59 |            2.02 |           29.94 |
+| h264-tuned-gpu    | (0.0, 4.0)   |    0.10816 |       0.67 |       1.00 |       1.00 |            2.60 |            1.89 |           16.07 |
+| h265-lossless-gpu | (0.0, 2.0)   |    0.00033 |       1.00 |       1.00 |       1.00 |            2.59 |            2.83 |           36.62 |
+| h265-lossless-gpu | (0.0, 4.0)   |    0.00067 |       0.82 |       1.00 |       1.00 |            2.60 |            2.81 |           33.63 |
+| h264-default-gpu  | (0.0, 2.0)   |    0.09996 |       0.29 |       0.54 |       0.73 |            2.58 |            2.63 |           18.38 |
+| h264-default-gpu  | (0.0, 4.0)   |    0.12741 |       0.28 |       0.52 |       0.72 |            2.57 |            2.30 |           13.42 |
 
-| variant           | zrange [m]   |   rmse [m] |   tenc [ms/img] |   tdec [ms/img] |   size [kb/img] |
-|:------------------|:-------------|-----------:|----------------:|----------------:|----------------:|
-| hue-only          | (0.0, 2.0)   |    0.00033 |            1.92 |            1.35 |          768.00 |
-| hue-only          | (0.0, 4.0)   |    0.00067 |            1.95 |            1.38 |          768.00 |
-| h264-lossless-cpu | (0.0, 2.0)   |    0.00033 |            6.46 |            3.08 |           31.97 |
-| h264-lossless-cpu | (0.0, 4.0)   |    0.00067 |            5.29 |            2.93 |           26.30 |
-| h264-default-cpu  | (0.0, 2.0)   |    0.09704 |            5.56 |            2.01 |           11.81 |
-| h264-default-cpu  | (0.0, 4.0)   |    0.12807 |            5.27 |            1.89 |            9.51 |
-| h264-lossless-gpu | (0.0, 2.0)   |    0.00033 |            2.83 |            2.25 |           70.97 |
-| h264-lossless-gpu | (0.0, 4.0)   |    0.00067 |            2.60 |            2.06 |           30.75 |
-| h264-default-gpu  | (0.0, 2.0)   |    0.09996 |            2.56 |            2.73 |           18.38 |
-| h264-default-gpu  | (0.0, 4.0)   |    0.12741 |            2.84 |            2.43 |           13.42 |
+#### Real Depthmaps
+
+Each tests encodes a sequence of `(30,600,800)` of np.float32 depthmaps taken with a RealSense 415 in range `[0..2]` containing a sitting person moving.
+
+![](etc/real.png)
+
+The reported values are
+
+| variant           | zrange [m]   |   rmse [m] |   <1mm [%] |   <5mm [%] |   <1cm [%] |   tenc [ms/img] |   tdec [ms/img] |   size [kb/img] |
+|:------------------|:-------------|-----------:|-----------:|-----------:|-----------:|----------------:|----------------:|----------------:|
+| hue-only          | (0.0, 2.0)   |    0.00023 |       1.00 |       1.00 |       1.00 |            2.00 |            1.31 |          900.00 |
+| hue-only          | (0.0, 4.0)   |    0.00047 |       0.91 |       1.00 |       1.00 |            2.06 |            1.35 |          900.00 |
+| h264-lossless-cpu | (0.0, 2.0)   |    0.00023 |       1.00 |       1.00 |       1.00 |           10.64 |            4.34 |           87.96 |
+| h264-lossless-cpu | (0.0, 4.0)   |    0.00047 |       0.91 |       1.00 |       1.00 |           10.48 |            3.84 |           67.15 |
+| h264-default-cpu  | (0.0, 2.0)   |    0.14033 |       0.70 |       0.96 |       0.97 |           11.02 |            2.79 |           44.25 |
+| h264-default-cpu  | (0.0, 4.0)   |    0.26466 |       0.64 |       0.88 |       0.95 |           10.48 |            2.54 |           37.43 |
+| h264-lossless-gpu | (0.0, 2.0)   |    0.00023 |       1.00 |       1.00 |       1.00 |            2.85 |            2.66 |           92.63 |
+| h264-lossless-gpu | (0.0, 4.0)   |    0.00047 |       0.91 |       1.00 |       1.00 |            2.84 |            2.60 |           76.17 |
+| h264-tuned-gpu    | (0.0, 2.0)   |    0.22042 |       0.87 |       0.98 |       0.98 |            2.85 |            2.43 |           61.44 |
+| h264-tuned-gpu    | (0.0, 4.0)   |    0.29478 |       0.74 |       0.97 |       0.98 |            2.83 |            2.31 |           44.42 |
+| h265-lossless-gpu | (0.0, 2.0)   |    0.00023 |       1.00 |       1.00 |       1.00 |            2.84 |            5.26 |           81.33 |
+| h265-lossless-gpu | (0.0, 4.0)   |    0.00047 |       0.91 |       1.00 |       1.00 |            2.84 |            4.78 |           69.25 |
+| h264-default-gpu  | (0.0, 2.0)   |    0.15737 |       0.69 |       0.95 |       0.97 |            2.85 |            3.89 |           35.48 |
+| h264-default-gpu  | (0.0, 4.0)   |    0.29960 |       0.64 |       0.86 |       0.95 |            2.83 |            3.74 |           33.47 |
+
+```
+python analysis.py data=path/to/npy
+```
 
 ### Hue Runtime Benchmark
 
