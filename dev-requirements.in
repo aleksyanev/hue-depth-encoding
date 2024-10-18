@@ -1,7 +1,7 @@
 pytest
 pytest-benchmark
 matplotlib
-av --no-binary=av # gpu support only when building ourselves
+av 
 pandas
 tabulate
 omegaconf

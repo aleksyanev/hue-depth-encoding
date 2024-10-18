@@ -8,6 +8,20 @@ Here's the encoding of depth values from a moving sine wave.
 
 https://github.com/user-attachments/assets/2814d21a-3d1b-4857-b415-dc1c5ae31460
 
+## Installation
+
+With Python >= 3.11 execute
+
+```shell
+git clone https://github.com/cheind/hue-depth-encoding.git
+
+# default install requires only numpy
+pip install -e .
+# development install adds more packages to run tests/analysis
+pip install -e '.[dev]'
+# or with gpu codec support in dev mode
+pip install -e '.[dev]' --no-binary=av 
+```
 
 ## Properties
 
