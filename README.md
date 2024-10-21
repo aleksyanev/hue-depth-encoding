@@ -10,13 +10,6 @@ with the following significant changes:
 
 The encoding is designed to transform 16bit single channel images to RGB color images that can be processed by standard (lossy) image codec with *minimized* compression artefacts. This leads to a compression factor of up to 80x while maintaining acceptable depth accuracy for many RGBD systems.
 
-
-Here's the encoding of depth values from a moving sine wave.
-
-
-https://github.com/user-attachments/assets/7edb440b-f41a-41d1-b373-e52e07da9644
-
-
 ## Method
 
 The underlying method is described in 
