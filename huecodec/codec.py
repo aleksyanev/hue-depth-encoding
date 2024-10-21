@@ -1,182 +1,262 @@
-""" Hue-based depth to color compression codec.
+import math
+from contextlib import contextmanager
 
-This library offers an efficient encoder/decoder that converts 16-bit 
-single-channel data into an 8-bit, three-channel color format. The encoding 
-reduces the data to approximately 10.5 bits while preserving the key 
-advantage of allowing further compression using standard lossy codecs with 
-minimal compression artifacts.
-
-Christoph Heindl, 2024/10, 
-https://github.com/cheind/hue-depth-encoding
-
-References:
-        Sonoda, Tetsuri, and Anders Grunnet-Jepsen.
-        "Depth image compression by colorization for Intel RealSense depth
-        cameras." Intel, Rev 1.0 (2021).
-"""
-
+import matplotlib.pyplot as plt
 import numpy as np
 
-HUE_ENCODER_MAX = 1530
-HUE_ENC_LUT: np.ndarray = None
-HUE_DEC_LUT: np.ndarray = None
 
+def rgb2hsv(
+    rgb: np.ndarray, *, output: np.ndarray = None, ftype: np.dtype = np.float32
+):
+    """Vectorized RGB to HSV"""
 
-def hue_encode(z: np.ndarray) -> np.ndarray:
-    """Encode an uint16 depth map into an RGB uint8 color map.
+    if output is None:
+        output = np.empty_like(rgb)
+    output[:] = 0
+    h, s, v = np.split(output, 3, -1)
+    h = h.squeeze(-1)
+    s = s.squeeze(-1)
+    v = v.squeeze(-1)
 
-    In production use `hue_encode_lut` which uses a pre-computed
-    lookup table.
+    rgb_amax = rgb.argmax(-1)
+    rgb_max = rgb.max(-1)
+    rgb_min = rgb.min(-1)
 
-    Params:
-        z: (*,) uint16 array in range [0,HUE_ENCODER_MAX]
-
-    Returns:
-        rgb: (*,3) uint8 array
-
-    References:
-        Sonoda, Tetsuri, and Anders Grunnet-Jepsen.
-        "Depth image compression by colorization for Intel RealSense depth
-        cameras." Intel, Rev 1.0 (2021).
-    """
-
-    # Increase depth is mapped to 6 different HUE gradients. First and last
-    # bins are used to capture 0 and >MAX.
-    idx = (
-        np.digitize(
-            z,
-            [0, 1, 256, 511, 766, 1021, 1276, 1531, np.iinfo(np.uint16).max],
-        )
-        - 1
-    )
-
-    o = np.empty(z.shape + (3,), dtype=np.uint8)
+    r = (rgb_max - rgb_min).astype(ftype)
+    ok = r > 0
 
     # fmt: off
-    m = idx == 0; o[m,0], o[m,1], o[m,2] = 0, 0, 0              # 0 <= z < 1             ; black
-    m = idx == 1; o[m,0], o[m,1], o[m,2] = 255, z[m] - 1, 0     # 1 <= z < 256           ; red -> yellow
-    m = idx == 2; o[m,0], o[m,1], o[m,2] = 511 - z[m], 255, 0   # 256 <= z < 512         ; yellow -> green
-    m = idx == 3; o[m,0], o[m,1], o[m,2] = 0, 255, z[m]-511     # 512 <= z < 766         ; green -> mint
-    m = idx == 4; o[m,0], o[m,1], o[m,2] = 0, 1021-z[m], 255    # 766 <= z < 1021        ; mint -> blue
-    m = idx == 5; o[m,0], o[m,1], o[m,2] = z[m]-1021, 0, 255    # 1021 <= z < 1276       ; blue -> magenta
-    m = idx == 6; o[m,0], o[m,1], o[m,2] = 255, 0, 1531-z[m]    # 1276 <= z < 1531       ; magenta -> red
-    m = idx == 7; o[m,0], o[m,1], o[m,2] = 255, 0, 0            # 1531 <= z < max        ; red
-    # fmt:on
+    m = ok & (rgb_amax == 0); h[m] = 0+(rgb[m, 1] - rgb[m, 2]) / r[m]
+    m = ok & (rgb_amax == 1); h[m] = 2+(rgb[m, 2] - rgb[m, 0]) / r[m]
+    m = ok & (rgb_amax == 2); h[m] = 4+(rgb[m, 0] - rgb[m, 1]) / r[m]
+    # fmt: on
+    h[:] *= 60
+    h[h < 0] += 360
 
-    return o
+    s[ok] = r[ok] / rgb_max[ok]
+    v[:] = rgb_max
+
+    return np.stack((h, s, v), -1)
 
 
-def hue_decode(rgb: np.ndarray) -> np.ndarray:
-    """Decode a hue-encoded RGB uint8 image into a uint16 depthmap.
+def hsv2rgb(hsv: np.ndarray, *, output: np.ndarray = None):
 
-    In production use `hue_decode_lut` which uses a pre-computed
-    lookup table.
+    h, s, v = np.split(hsv, 3, axis=-1)
+    h = h.squeeze(-1)
+    s = s.squeeze(-1)
+    v = v.squeeze(-1)
 
-     Params:
-        rgb: (*,3) uint8 RGB array in range [0,255]
+    h = h / 60
+    hi = np.floor(h).astype(int)
+    f = h - hi
+    p = v * (1 - s)
+    q = v * (1 - s * f)
+    t = v * (1 - s * (1 - f))
 
-    Returns:
-        z: (*,) uint16 array in range [0,HUE_ENCODER_MAX]
+    w = hi % 6
+    if output is None:
+        output = np.empty_like(hsv)
+    # fmt: off
+    m = w==0; output[m,0],output[m,1],output[m,2] = v[m],t[m],p[m]
+    m = w==1; output[m,0],output[m,1],output[m,2] = q[m],v[m],p[m]
+    m = w==2; output[m,0],output[m,1],output[m,2] = p[m],v[m],t[m]
+    m = w==3; output[m,0],output[m,1],output[m,2] = p[m],q[m],v[m]
+    m = w==4; output[m,0],output[m,1],output[m,2] = t[m],p[m],v[m]
+    m = w==5; output[m,0],output[m,1],output[m,2] = v[m],p[m],q[m]
+    # fmt: on
 
-    References:
-        Sonoda, Tetsuri, and Anders Grunnet-Jepsen.
-        "Depth image compression by colorization for Intel RealSense depth
-        cameras." Intel, Rev 1.0 (2021).
-    """
-    assert rgb.shape[-1] == 3
+    return output
 
-    r, g, b = np.split(rgb.astype(int), 3, -1)
 
-    z = np.empty(rgb.shape[:2], dtype=np.uint16)
+class EncoderOpts:
+    def __init__(
+        self,
+        max_hue: float = 300,
+        qtype: np.dtype = np.uint8,
+        ftype: np.dtype = np.float32,
+        err_depth: float = np.nan,
+        err_rgb: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        min_v: float = 0.4,
+        min_s: float = 0.4,
+        use_lut: bool = True,
+    ):
+        assert np.issubdtype(qtype, np.unsignedinteger)
+        self.qinfo = np.iinfo(qtype)
+        self.qtype = qtype
+        self.ftype = ftype
+        self.max_hue = max_hue
+        self.num_unique = int(self.max_hue / 60) * (2**self.qinfo.bits - 1) + 1
+        self.bits = math.log(self.num_unique) / math.log(2)
+        self.err_depth = err_depth
+        self.err_rgb = np.array(err_rgb).astype(ftype)
+        self.err_hsv = rgb2hsv(self.err_rgb[None]).squeeze().astype(ftype)
+        self.min_v = min_v
+        self.min_s = min_s
+        self.use_lut = use_lut
 
-    not_zero = (rgb > 0).any(-1, keepdims=True)
+        self._enc_lut = None
+        self._dec_lut = None
 
-    # The follwing conditions are overlapping
-    # but since we generally use LUT, the
-    # performance hit is irrelevant
-    c1 = (r >= g) & (r >= b) & (g >= b)  # r largest, then g
-    c2 = (r >= g) & (r >= b) & (g < b)  # r largest, then b
-    c3 = (g >= r) & (g >= b) & ~(c1 | c2)  # g largest
-    c4 = (b >= r) & (b >= r) & ~(c1 | c2 | c3)  # b largest
+    @property
+    def enc_lut(self):
+        if self.use_lut:
+            if self._enc_lut is None:
+                self._enc_lut = _create_enc_lut(self)
+        return self._enc_lut
 
-    z = (
-        (g - b + 1) * (not_zero & c1)
-        + (g - b + 1531) * (not_zero & c2)
-        + (b - r + 511) * (not_zero & c3)
-        + (r - g + 1021) * (not_zero & c4)
+    @property
+    def dec_lut(self):
+        if self.use_lut:
+            if self._dec_lut is None:
+                self._dec_lut = _create_dec_lut(self)
+        return self._dec_lut
+
+
+# Default encoder settings
+_default_opts = EncoderOpts()
+
+
+@contextmanager
+def enc_opts(new_opts: EncoderOpts = EncoderOpts()):
+    global _default_opts
+    try:
+        old_opts = _default_opts
+        _default_opts = new_opts
+        yield new_opts
+    finally:
+        _default_opts = old_opts
+
+
+def encode(
+    depth: np.ndarray,
+    *,
+    output: np.ndarray = None,
+    sanitized: bool = False,
+    opts: EncoderOpts = None,
+):
+    opts = opts or _default_opts
+    h = depth * opts.max_hue
+    s = np.ones_like(h)
+    v = s
+    if not sanitized:
+        ok = np.isfinite(depth) & (depth >= 0) & (depth <= 1.0)
+        h[~ok] = opts.err_hsv[0]
+        s[~ok] = opts.err_hsv[1]
+        v[~ok] = opts.err_hsv[2]
+
+    hsv = np.stack((h, s, v), -1)
+    rgb = hsv2rgb(hsv, output=output)
+    return rgb
+
+
+def decode(
+    rgb: np.ndarray,
+    *,
+    output: np.ndarray = None,
+    opts: EncoderOpts = None,
+):
+    opts = opts or _default_opts
+    if np.issubdtype(rgb.dtype, np.unsignedinteger):
+        rgb = dequantize(rgb)
+    hsv = rgb2hsv(rgb)
+
+    if output is None:
+        output = np.empty(rgb.shape[:-1], dtype=opts.ftype)
+
+    ok = (
+        (hsv[..., 1] >= opts.min_s)
+        & (hsv[..., 2] >= opts.min_v)
+        & (hsv[..., 0] <= opts.max_hue)
     )
-    return z.astype(np.uint16).squeeze(-1)
+    output[:] = opts.err_depth
+    output[ok] = hsv[ok, 0] / opts.max_hue
+
+    return output
 
 
-def _create_enc_lut():
-    z = np.arange(0, HUE_ENCODER_MAX + 1, dtype=np.uint16)
-    return hue_encode(z)
+def quantize(x: np.ndarray, *, opts: EncoderOpts = None):
+    opts = opts or _default_opts
+    return np.round(np.iinfo(opts.qtype).max * x).astype(opts.qtype)
 
 
-def hue_encode_lut(z: np.ndarray) -> np.ndarray:
-    """Encode an uint16 depth map into an RGB uint8 color map.
-
-    Params:
-        z: (*,) uint16 array in range [0,HUE_ENCODER_MAX]
-
-    Returns:
-        rgb: (*,3) uint8 array
-
-    References:
-        Sonoda, Tetsuri, and Anders Grunnet-Jepsen.
-        "Depth image compression by colorization for Intel RealSense depth
-        cameras." Intel, Rev 1.0 (2021).
-    """
-    global HUE_ENC_LUT
-    if HUE_ENC_LUT is None:
-        HUE_ENC_LUT = _create_enc_lut()
-
-    return np.ascontiguousarray(HUE_ENC_LUT[z])
+def dequantize(x: np.ndarray, *, opts: EncoderOpts = None):
+    opts = opts or _default_opts
+    return (x / np.iinfo(x.dtype).max).astype(opts.ftype)
 
 
-def _create_dec_lut():
+def decode_lut(
+    rgb: np.ndarray,
+    *,
+    output: np.ndarray = None,
+    opts: EncoderOpts = _default_opts,
+):
+    opts = opts or None
+    if output is None:
+        output = np.empty(rgb.shape[:-1], dtype=opts.dec_lut.dtype)
+
+    output[:] = opts.dec_lut[
+        rgb[..., 0],
+        rgb[..., 1],
+        rgb[..., 2],
+    ]
+    return output
+
+
+def encode_lut(
+    depth: np.ndarray,
+    *,
+    output: np.ndarray = None,
+    sanitized: bool = True,
+    opts: EncoderOpts = None,
+):
+    opts = opts or _default_opts
+    if output is None:
+        output = np.empty(depth.shape + (3,), dtype=opts.qtype)
+
+    # NOTE! this already reports quantized rgb, see _create_enc_lut
+    # linspace inverse for index
+
+    idx = np.round(depth * (opts.num_unique - 1)).astype(int)
+
+    if sanitized:
+        output[:] = opts.enc_lut[idx]
+    else:
+        ok = (idx >= 0) & (idx < opts.num_unique)
+        output[:] = opts.err_rgb
+        output[ok] = opts.enc_lut[idx[ok]]
+
+    return output
+
+
+def _create_enc_lut(opts: EncoderOpts = None):
+    opts = opts or _default_opts
+    d = np.linspace(0, 1.0, opts.num_unique, dtype=opts.ftype)
+    return quantize(encode(d, opts=opts), opts=opts)
+
+
+def _create_dec_lut(opts: EncoderOpts = None):
+    opts = opts or _default_opts
     rgb = np.stack(
         np.meshgrid(
-            np.arange(256, dtype=np.uint8),
-            np.arange(256, dtype=np.uint8),
-            np.arange(256, dtype=np.uint8),
+            np.arange(opts.qinfo.max + 1, dtype=opts.qtype),
+            np.arange(opts.qinfo.max + 1, dtype=opts.qtype),
+            np.arange(opts.qinfo.max + 1, dtype=opts.qtype),
             indexing="ij",
         ),
         -1,
     )
 
-    return hue_decode(rgb)
-
-
-def hue_decode_lut(rgb: np.ndarray) -> np.ndarray:
-    """Decode a hue-encoded RGB uint8 image into a uint16 depthmap.
-
-    In production use `hue_decode_lut` which uses a pre-computed
-    lookup table.
-
-     Params:
-        rgb: (*,3) uint8 RGB array in range [0,255]
-
-    Returns:
-        z: (*,) uint16 array in range [0,HUE_ENCODER_MAX]
-
-    References:
-        Sonoda, Tetsuri, and Anders Grunnet-Jepsen.
-        "Depth image compression by colorization for Intel RealSense depth
-        cameras." Intel, Rev 1.0 (2021).
-    """
-    global HUE_DEC_LUT
-    if HUE_DEC_LUT is None:
-        HUE_DEC_LUT = _create_dec_lut()
-
-    return np.ascontiguousarray(HUE_DEC_LUT[rgb[..., 0], rgb[..., 1], rgb[..., 2]])
+    return decode(rgb, opts=opts)
 
 
 def depth2rgb(
     d: np.ndarray,
     zrange: tuple[float, float],
+    *,
+    output: np.ndarray = None,
+    sanitized: bool = False,
     inv_depth: bool = False,
-    use_lut: bool = True,
+    opts: EncoderOpts = None,
 ):
     """Compress depth to RGB
 
@@ -191,31 +271,34 @@ def depth2rgb(
         d: (*,) depth map
         zrange: clipping range for depth values before normalization to [0..HUE_ENCODER_MAX]
         inv_depth: colorizes 1/depth with finer quantization for closer depths
-        use_lut: Wether to use fast lookup tables or compute on the fly
+        opts: encoder options
 
     Returns:
-        rgb: color encoded depth map
+        rgb: quantized color encoded depth map
     """
-
+    opts = opts or _default_opts
     if inv_depth:
-        assert zrange[0] > 0, "zmin==0 not handled for inverse depth encoding"
-
         zmin = 1 / zrange[1]
         zmax = 1 / zrange[0]
         zrange = (zmin, zmax)
         with np.errstate(divide="ignore"):
-            d = np.where(d > 0, 1 / d, zmax)
+            d = 1 / d
 
-    d = np.clip((d - zrange[0]) / (zrange[1] - zrange[0]), 0.0, 1.0)
-    z = np.round(HUE_ENCODER_MAX * d).astype(np.uint16)
-    return hue_encode_lut(z) if use_lut else hue_encode(z)
+    d = (d - zrange[0]) / (zrange[1] - zrange[0])
+    return (
+        encode_lut(d, output=output, sanitized=sanitized, opts=opts)
+        if opts.use_lut
+        else encode(d, output=output, sanitized=sanitized, opts=opts)
+    )
 
 
 def rgb2depth(
     rgb: np.ndarray,
     zrange: tuple[float, float],
+    *,
+    output: np.ndarray = None,
     inv_depth: bool = False,
-    use_lut: bool = True,
+    opts: EncoderOpts = None,
 ):
     """Decompress RGB to depth
 
@@ -225,28 +308,105 @@ def rgb2depth(
         rgb: (*,3) color map
         zrange: zrange used during compression
         inv_depth: wether depth or disparity was encoded
-        use_lut: Wether to use fast lookup tables or compute on the fly.
-            LUT is initialized lazily on first run, hence first run may take
-            longer.
+        opts: encoder options
 
     Returns:
         rgb: color encoded depth map
     """
-    z = hue_decode_lut(rgb) if use_lut else hue_decode(rgb)
-    z = z.astype(np.float32)
+    opts = opts or _default_opts
+    d = (
+        decode_lut(rgb, output=output, opts=opts)
+        if opts.use_lut
+        else decode(rgb, output=output, opts=opts)
+    )
     if inv_depth:
-        assert zrange[0] > 0, "zmin==0 not handled for inverse depth encoding"
         zmin = 1 / zrange[1]
         zmax = 1 / zrange[0]
         zrange = (zmin, zmax)
 
-    d = (z / HUE_ENCODER_MAX) * (zrange[1] - zrange[0]) + zrange[0]
+    d = d * (zrange[1] - zrange[0]) + zrange[0]
 
     if inv_depth:
         with np.errstate(divide="ignore"):
-            d = np.where(d > 0, 1 / d, zrange[1])
+            d = 1 / d
     return d
 
 
+def main():
+    h = np.arange(330)
+    s = np.ones(330)
+    v = np.ones(330)
+    hsv = np.stack((h, s, v), -1)
+    rgb = hsv2rgb(hsv)
+    hsv2 = rgb2hsv(rgb)
+    print(abs(hsv - hsv2).sum(-1).max())
+
+    # fig, ax = plt.subplots()
+    # ax.imshow(rgb[None], aspect="auto")
+    # plt.show()
+
+    # d = np.linspace(0, 1.0, 1276)
+    with enc_opts() as opts:
+        print(opts.max_hue, opts.num_unique)
+        d = np.linspace(0, 1.0, opts.num_unique)
+        rgb_enc = encode(d)
+
+        print((rgb_enc * 255)[:10])
+        rgb_byte = quantize(rgb_enc)
+        num_diff = (abs(np.diff(rgb_byte, axis=0)).sum(-1) > 0).sum() + 1
+        print(num_diff)
+
+        fig, ax = plt.subplots()
+        ax.imshow(rgb[None], aspect="auto", extent=(0, 1, 0, 1))
+
+        fig, ax = plt.subplots()
+        dd = decode(rgb_byte / 255)
+        print(rgb_byte)
+        print("here", abs(d - dd).max())
+
+        plt.plot(d, dd)
+        plt.show()
+
+        rgb_byte_lut = encode_lut(d)
+        assert (rgb_byte.astype(int) - rgb_byte_lut.astype(int)).sum() == 0
+
+        dd_lut = decode_lut(rgb_byte_lut)
+        print(abs(dd - dd_lut).max())
+
+        print(rgb_byte[:3])
+        print(rgb_byte_lut[:3])
+
+        rng = np.random.default_rng(123)
+        d = rng.random((512, 512), dtype=np.float32)
+        rgb = encode(d)
+        qrgb = quantize(rgb)
+        dr = decode(qrgb)
+        err_abs = abs(dr - d).max()
+        print(err_abs)
+
+        # print(_default.max_hue, _default.num_unique, _default.bits)
+
+        d = np.logspace(-5, 0, 100)
+        rgb = encode(d)
+        qrgb = quantize(rgb)
+        dr = decode(qrgb)
+        err_abs = abs(dr - d)
+        print(err_abs.max(), np.argmax(err_abs))
+
+        # print(np.argmax())
+
+        rgb = np.array(
+            [[10, 20, 50], [255, 0, 41], [201, 114, 255], [111, 63, 140]],
+            dtype=np.uint8,
+        )
+        # first two should be nan (value/saturation) and above ENC_MAX_HUE
+        # last one and second last should be 277.1/300 ~ 0.92 (desaturated ~55%, devalued ~55%)
+
+        d = decode(rgb)
+        print(d)
+
+    pass
+
+
 if __name__ == "__main__":
-    print(HUE_DEC_LUT.nbytes)
+    main()

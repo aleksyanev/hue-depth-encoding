@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from huecodec import codec_v2 as hc
+from huecodec import codec as hc
 
 
 @pytest.mark.parametrize("use_lut", [True, False])

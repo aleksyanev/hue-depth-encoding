@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from huecodec import codec_v2 as hc
+from huecodec import codec as hc
 
 
 SIZE_DEFAULT = 8

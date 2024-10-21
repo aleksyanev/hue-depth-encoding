@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 
-from huecodec import codec_v2 as hc
+from huecodec import codec as hc
 
 N_ENCDEC_FRAMES = 1000
 SHOW_PLOTS = False
