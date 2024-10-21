@@ -1,4 +1,4 @@
-# hue-encoding
+# hue-depth-encoding
 This project provides efficient vectorized Python code to perform depth `<->` color encoding based on
 
 > Sonoda, Tetsuri, and Anders Grunnet-Jepsen.
