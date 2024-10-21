@@ -8,18 +8,13 @@ with the following significant changes:
  1. We stop the hue range at 300° (default) in order to avoid having close and far ranges assigned redish color.
  1. We detect de-valued and de-saturized colors in the decoding and assign it a pre-defined failure depth.
 
-Here's the encoding of depth values from a moving sine wave.
-
-
-
-https://github.com/user-attachments/assets/7edb440b-f41a-41d1-b373-e52e07da9644
-
-
-
-
 The encoding is designed to transform 16bit single channel images to RGB color images that can be processed by standard (lossy) image codec with *minimized* compression artefacts. This leads to a compression factor of up to 80x while maintaining acceptable depth accuracy for many RGBD systems.
 
 
+Here's the encoding of depth values from a moving sine wave.
+
+
+https://github.com/user-attachments/assets/7edb440b-f41a-41d1-b373-e52e07da9644
 
 
 ## Method
