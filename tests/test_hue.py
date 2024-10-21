@@ -1,33 +1,48 @@
 import pytest
 import numpy as np
 
-from huecodec import codec as hc
+from huecodec import codec_v2 as hc
 
 
 @pytest.mark.parametrize("use_lut", [True, False])
-def test_enc_dec(use_lut):
-    assert hc.HUE_ENCODER_MAX == 1530
+def test_canonical(use_lut):
+    with hc.enc_opts(hc.EncoderOpts(max_hue=300, use_lut=use_lut)) as opts:
+        # Construct depths that should map to exact
+        # RGB values and hence do not yield any reconstruction
+        # error after quantization
+        d = np.linspace(0, 1.0, opts.num_unique)
+        rgb = hc.quantize(hc.encode(d))
+        dr = hc.decode(hc.dequantize(rgb))
+        np.testing.assert_allclose(dr, d, atol=1e-7)
 
-    z = np.arange(0, hc.HUE_ENCODER_MAX + 1, dtype=np.uint16)
-    rgb = hc.hue_encode(z)
-    zr = hc.hue_decode(rgb)
-    np.testing.assert_allclose(zr, z)
+    with hc.enc_opts(hc.EncoderOpts(max_hue=330, use_lut=use_lut)) as opts:
+        # As soon as max_hue/60 is not integer, we end up with fractional
+        # rgb values -> reconstruction errors
+        d = np.linspace(0, 1.0, opts.num_unique)
+        rgb = hc.quantize(hc.encode(d))
+        dr = hc.decode(hc.dequantize(rgb))
+        np.testing.assert_allclose(dr, d, atol=5e-4)
 
-    r = (0.0, 2.0)
-    d = np.random.rand(1024, 1024) * 2  # [0..2)
-    rgb = hc.depth2rgb(d, r, inv_depth=False, use_lut=use_lut)
-    dr = hc.rgb2depth(rgb, r, inv_depth=False, use_lut=use_lut)
-    assert abs(dr - d).max() < 1e-3
 
-    r = (0.1, 2.1)
-    d += 0.1
-    rgb = hc.depth2rgb(d, r, inv_depth=True, use_lut=use_lut)
-    dr = hc.rgb2depth(rgb, r, inv_depth=True, use_lut=use_lut)
+@pytest.mark.parametrize("use_lut", [True, False])
+def test_depth2rgb(use_lut):
 
-    if use_lut:
-        # should be initialized
-        assert hc.HUE_ENC_LUT.shape == (1531, 3)
-        assert hc.HUE_DEC_LUT.shape == (256, 256, 256)
+    with hc.enc_opts(hc.EncoderOpts(use_lut=use_lut)) as opts:
+        r = (0.0, 2.0)
+        d = np.random.rand(1024, 1024) * 2  # [0..2)
+        rgb = hc.depth2rgb(d, r, inv_depth=False)
+        dr = hc.rgb2depth(rgb, r, inv_depth=False)
+        assert abs(dr - d).max() < 1e-3
+
+        r = (0.1, 2.1)
+        d += 0.1
+        rgb = hc.depth2rgb(d, r, inv_depth=True)
+        dr = hc.rgb2depth(rgb, r, inv_depth=True)
+
+        if use_lut:
+            # should be initialized
+            assert opts.enc_lut.shape == (opts.num_unique, 3)
+            assert opts.dec_lut.shape == (256, 256, 256)
 
 
 @pytest.mark.parametrize("shape", [(1, 512), (512, 512), (10, 512, 512)])
@@ -39,7 +54,6 @@ def test_enc_dec_variants(seed, shape, range, inv_depth):
     d = rng.random(shape, dtype=np.float32) * (range[1] - range[0]) + range[0]
     rgb = hc.depth2rgb(d, range, inv_depth=inv_depth)
     dr = hc.rgb2depth(rgb, range, inv_depth=inv_depth)
-
     err_abs = abs(dr - d)
     assert err_abs.max() < 1e-1
 
@@ -122,10 +136,22 @@ def test_lossy_compression():
 
 @pytest.mark.parametrize("shape", [(480, 640), (1080, 1920)])
 @pytest.mark.parametrize("use_lut", [True, False])
-def test_enc_perf(benchmark, shape, use_lut):
+def test_enc_perf(benchmark, shape, use_lut, sanitized):
     d = np.random.rand(*shape)
 
-    _ = benchmark(hc.depth2rgb, d, (0.0, 1.0), use_lut=use_lut)
+    with hc.enc_opts(hc.EncoderOpts(use_lut=use_lut)) as opts:
+        # ensure lookups exist before benchmarking
+        el = opts.enc_lut
+        dl = opts.dec_lut
+
+        output = np.empty(shape + (3,), np.uint8)
+        _ = benchmark(
+            hc.depth2rgb,
+            d,
+            (0.0, 1.0),
+            output=output,
+            sanitized=True,
+        )
 
 
 @pytest.mark.parametrize("shape", [(480, 640), (1080, 1920)])
@@ -133,5 +159,16 @@ def test_enc_perf(benchmark, shape, use_lut):
 def test_dec_perf(benchmark, shape, use_lut):
     d = np.random.rand(*shape)
 
-    e = hc.depth2rgb(d, (0.0, 1.0))
-    _ = benchmark(hc.rgb2depth, e, (0.0, 1.0), use_lut=use_lut)
+    with hc.enc_opts(hc.EncoderOpts(use_lut=use_lut)) as opts:
+        # ensure lookups exist before benchmarking
+        el = opts.enc_lut
+        dl = opts.dec_lut
+
+        output = np.empty_like(d)
+        e = hc.depth2rgb(d, (0.0, 1.0))
+        _ = benchmark(
+            hc.rgb2depth,
+            e,
+            (0.0, 1.0),
+            output=output,
+        )

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from omegaconf import OmegaConf
 
-import huecodec as hc
+from huecodec import codec_v2 as hc
 
 N_ENCDEC_FRAMES = 1000
 SHOW_PLOTS = False
@@ -93,7 +93,7 @@ def hue_enc_dec(gt, zrange, inv_depth, **kwargs):
 
     # process N_ENCDEC_FRAMES by cycling batched gt
     for depth in islice(cycle(gt), N_ENCDEC_FRAMES):
-        e = hc.depth2rgb(depth, zrange=zrange, inv_depth=inv_depth)
+        e = hc.depth2rgb(depth, zrange=zrange, sanitized=True, inv_depth=inv_depth)
     tenc = time.perf_counter() - t  # not very accurate, use benchmarks
 
     t = time.perf_counter()
@@ -101,7 +101,7 @@ def hue_enc_dec(gt, zrange, inv_depth, **kwargs):
         d = hc.rgb2depth(rgb, zrange=zrange, inv_depth=inv_depth)
     tdec = time.perf_counter() - t
 
-    e = hc.depth2rgb(gt, zrange=zrange, inv_depth=inv_depth)
+    e = hc.depth2rgb(gt, zrange=zrange, sanitized=True, inv_depth=inv_depth)
     d = hc.rgb2depth(e, zrange=zrange, inv_depth=inv_depth)
 
     factor = gt.shape[0] / N_ENCDEC_FRAMES
@@ -125,7 +125,7 @@ def av_enc_dec(gt, zrange, inv_depth, codec):
     # we virtually repeat the experiment
     t = time.perf_counter()
     for d in islice(cycle(gt), N_ENCDEC_FRAMES):
-        rgb = hc.depth2rgb(d, zrange=zrange, inv_depth=inv_depth)
+        rgb = hc.depth2rgb(d, zrange=zrange, sanitized=True, inv_depth=inv_depth)
         frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
         packet = stream.encode(frame)
         output.mux(packet)
@@ -182,7 +182,7 @@ def analyze(gt, pred, outprefix):
     if SHOW_PLOTS:
         plt.show()
 
-    mse = np.square(gt - pred).mean()
+    mse = np.nanmean(np.square(gt - pred))
     rmse = np.sqrt(mse)
     return {
         "abs_err_mean": err.mean().item(),
@@ -190,6 +190,7 @@ def analyze(gt, pred, outprefix):
         "abs_err_1mm": (err < 1e-3).sum() / np.prod(err.shape),
         "abs_err_5mm": (err < 5e-3).sum() / np.prod(err.shape),
         "abs_err_1cm": (err < 1e-2).sum() / np.prod(err.shape),
+        "nan": ((~np.isfinite(err)).sum()) / np.prod(err.shape),
         "mse": mse.item(),
         "rmse": rmse.item(),
         **extra,
@@ -261,6 +262,7 @@ def main():
     else:
         print("Loading dataset")
         gt = np.load(datapath).astype(np.float32)
+        gt[~np.isfinite(gt)] = 2.0
         plot_depth(gt[0], (0.0, 2.0), "real")
 
     # warmup
@@ -283,6 +285,7 @@ def main():
             "abs_err_1mm",
             "abs_err_5mm",
             "abs_err_1cm",
+            "nan",
             "tenc",
             "tdec",
             "nbytes",
@@ -300,6 +303,7 @@ def main():
             "abs_err_1mm": "<1mm [%]",
             "abs_err_5mm": "<5mm [%]",
             "abs_err_1cm": "<1cm [%]",
+            "nan": "failed [%]",
             "tenc": "tenc [ms/img]",
             "tdec": "tdec [ms/img]",
             "nbytes": "size [kb/img]",
@@ -311,7 +315,7 @@ def main():
     print(
         df.to_markdown(
             index=False,
-            floatfmt=("", "", ".5f", ".2f", ".2f", ".2f", ".2f", ".2f", ".2f"),
+            floatfmt=("", "", ".5f", ".3f", ".3f", ".3f", ".3f", ".2f", ".2f", ".2f"),
         )
     )
 

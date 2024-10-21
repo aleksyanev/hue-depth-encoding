@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-import huecodec as hc
+from huecodec import codec_v2 as hc
+
 
 SIZE_DEFAULT = 8
 SIZE_LARGE = 10
@@ -17,36 +18,31 @@ plt.rc("figure", titlesize=SIZE_LARGE)  # fontsize of the tick labels
 
 def plot_linear_vs_disparity():
 
-    depth = np.linspace(10, 50, 100)
+    near = 0.1
+    far = 1.1
 
-    near_lin = 10
-    far_lin = 50
+    depth = np.linspace(near, far, 200)
 
-    near_disp = 10
-    far_disp = 50
+    lin = np.clip((depth - near) / (far - near), 0.0, 1.0)
+    disp = np.clip((1 / depth - 1 / near) / (1 / far - 1 / near), 0.0, 1.0)
 
-    disp = np.clip(
-        (1 / depth - 1 / near_disp) / (1 / far_disp - 1 / near_disp), 0.0, 1.0
-    )
-    lin = np.clip((depth - near_lin) / (far_lin - near_lin), 0.0, 1.0)
+    with hc.enc_opts(hc.EncoderOpts(max_hue=300)):
 
-    z_disp = np.round(disp * hc.HUE_ENCODER_MAX).astype(np.uint16)
-    z_lin = np.round(lin * hc.HUE_ENCODER_MAX).astype(np.uint16)
+        e_lin = hc.quantize(hc.encode(lin))
+        e_disp = hc.quantize(hc.encode(disp))
 
-    e_disp = hc.hue_encode(z_disp)
-    e_lin = hc.hue_encode(z_lin)
+        d_lin = hc.decode(hc.dequantize(e_lin))  # [0..1]
+        d_disp = hc.decode(hc.dequantize(e_disp))
 
-    z_disp_r = hc.hue_decode(e_disp)
-    z_lin_r = hc.hue_decode(e_lin)
+        d_lin = d_lin * (far - near) + near
+        d_disp = d_disp * (1 / far - 1 / near) + 1 / near
+        d_disp = 1 / d_disp
 
-    depth_from_disp = 1 / (
-        (z_disp_r / hc.HUE_ENCODER_MAX) * (1 / far_disp - 1 / near_disp) + 1 / near_disp
-    )
-    depth_from_lin = (z_lin_r / hc.HUE_ENCODER_MAX) * (far_lin - near_lin) + near_lin
+    # print(d_disp)
 
     fig = plt.figure(figsize=(10, 6), layout="constrained")
     fig.suptitle(
-        f"Encoder/Decoder comparison for linear/disparity variants.\nnear {near_lin} / far {far_lin}"
+        f"Encoder/Decoder comparison for linear/disparity variants.\nnear {near} / far {far}"
     )
     gs = fig.add_gridspec(3, 2, height_ratios=(3, 1, 1))
 
@@ -56,7 +52,7 @@ def plot_linear_vs_disparity():
     ax.scatter(depth[::5], disp[::5], s=4)
     ax.plot(depth, lin, label="linear")
     ax.scatter(depth[::5], lin[::5], s=4)
-    ax.set_xlim(depth.min() - 0.5, depth.max() - 0.5)
+    ax.set_xlim(depth.min(), depth.max())
     ax.set_ylim(0, 1.1)
     ax.set_xlabel("depth")
     ax.set_ylabel("normalized depth")
@@ -65,13 +61,16 @@ def plot_linear_vs_disparity():
 
     ax = fig.add_subplot(gs[0, 1])
     # Transformed values
-    ax.plot(depth, abs(depth_from_disp - depth), label="disparity")
-    ax.plot(depth, abs(depth_from_lin - depth), label="linear")
-    ax.set_xlim(depth.min(), depth.min() + 40)
-    ax.set_ylim(0, 0.1)
+
+    ax.plot(depth, abs(d_disp - depth), label="disparity")
+    ax.plot(depth, abs(d_lin - depth), label="linear")
+    ax.set_xlim(depth.min(), depth.max())
+    ax.set_ylim(1e-7, 0.1)
     ax.set_xlabel("depth")
     ax.set_ylabel("absolute depth error")
     ax.set_title("Encoding/Decoding error")
+    ax.set_yscale("log")
+    ax.grid()
     ax.legend(loc="upper left")
 
     ax = fig.add_subplot(gs[1, :])
