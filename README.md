@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/873968632.svg)](https://doi.org/10.5281/zenodo.14014715)
+
 # hue-depth-encoding
 This project provides efficient vectorized Python code to perform depth `<->` color encoding based on
 
