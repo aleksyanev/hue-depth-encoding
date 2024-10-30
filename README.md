@@ -24,9 +24,9 @@ The base method relies on encoding depth as fully saturated/valued colors and as
 ```math
 n = \lfloor \textrm{Hue}_{\textrm{max}}/ 60\rfloor (2^b - 1) + 1
 ```
-unique colors. In the original method $\textrm{Hue}_{\textrm{max}}=360°$, whereas in this implementation $\textrm{Hue}_{\textrm{max}}=300°$ to avoid ambiguitis between close and far depth values that would otherwise get assigned a reddish color.
+unique colors. In the original method $`\textrm{Hue}_{\textrm{max}}=360°`$, whereas in this implementation $`\textrm{Hue}_{\textrm{max}}=300°`$ to avoid ambiguitis between close and far depth values that would otherwise get assigned a reddish color.
 
-Limiting $\textrm{Hue}_{\textrm{max}}$ limits the number of available bits to $\log_2 n$ (~10.3bit).
+Limiting $`\textrm{Hue}_{\textrm{max}}`$ limits the number of available bits to $`\log_2 n`$ (~10.3bit).
 
 
 ### Depth transformations
